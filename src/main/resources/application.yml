@@ -1,0 +1,66 @@
+server:
+  port: 8083
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${SPRING_DATASOURCE_URL:localhost:5435/order_db}
+    username: ${SPRING_DATASOURCE_USERNAME:order_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:order_pass}
+    driver-class-name: org.postgresql.Driver
+  cloud:
+    config:
+      enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration
+
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:localhost}
+      port: 6379
+      timeout: 60000
+  cache:
+    type: redis
+
+logging:
+  level:
+    org.springframework: INFO
+    order_management.order_service: DEBUG
+    org.springframework.cloud.openfeign: DEBUG
+    io.github.resilience4j: DEBUG
+    org.springframework.circuitbreaker: DEBUG
+feign:
+  circuitbreaker:
+    enabled: true
+  okhttp:
+    enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      product-service:
+        slidingWindowSize: 5
+        minimumNumberOfCalls: 3
+        failureRateThreshold: 50
+        waitDurationInOpenState: 5s
+      customer-service:
+        slidingWindowSize: 5
+        minimumNumberOfCalls: 3
+        failureRateThreshold: 50
+        waitDurationInOpenState: 5s
+
+
+external:
+  product-service-url: ${PRODUCT_SERVICE_URL:http://localhost:8081}
+  customer-service-url: ${CUSTOMER_SERVICE_URL:http://localhost:8082}

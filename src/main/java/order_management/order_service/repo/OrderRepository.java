@@ -1,6 +1,7 @@
 package order_management.order_service.repo;
 
-import com.jay.orderservice.models.Order;
+
+import order_management.order_service.models.Order;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

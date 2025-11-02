@@ -1,16 +1,17 @@
 package order_management.order_service.services.impl;
 
-import com.jay.orderservice.dto.OrderRequestDTO;
-import com.jay.orderservice.dto.OrderResponseDTO;
-import com.jay.orderservice.enums.OrderStatusEnum;
-import com.jay.orderservice.models.Customer;
-import com.jay.orderservice.models.Order;
-import com.jay.orderservice.models.Product;
-import com.jay.orderservice.repository.CustomerRepository;
-import com.jay.orderservice.repository.OrderRepository;
-import com.jay.orderservice.repository.ProductRepository;
-import com.jay.orderservice.services.OrderService;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import jakarta.transaction.Transactional;
+import order_management.order_service.dto.CustomerDTO;
+import order_management.order_service.dto.OrderRequestDTO;
+import order_management.order_service.dto.OrderResponseDTO;
+import order_management.order_service.dto.ProductDTO;
+import order_management.order_service.enums.OrderStatusEnum;
+import order_management.order_service.feign.CustomerClient;
+import order_management.order_service.feign.ProductClient;
+import order_management.order_service.models.Order;
+import order_management.order_service.repo.OrderRepository;
+import order_management.order_service.services.OrderService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
@@ -23,35 +24,57 @@ import java.util.List;
 @Transactional
 public class OrderServiceImpl implements OrderService {
 
-    @Autowired
-    private OrderRepository orderRepository;
-    @Autowired
-    private CustomerRepository customerRepository;
-    @Autowired
-    private ProductRepository productRepository;
 
+    private final OrderRepository orderRepository;
+    private final ProductClient productClient;
+    private final CustomerClient customerClient;
+
+    public OrderServiceImpl(OrderRepository orderRepository, ProductClient productClient, CustomerClient customerClient) {
+        this.orderRepository = orderRepository;
+        this.productClient = productClient;
+        this.customerClient = customerClient;
+    }
+
+    @CircuitBreaker(name = "productService", fallbackMethod = "productFallBack")
+    private ProductDTO getProductWithFallBack(Long id){
+        return productClient.getProductById(id);
+    };
+    public ProductDTO productFallBack(Long id, Throwable throwable){
+        ProductDTO productDTO = new ProductDTO();
+        productDTO.setId(id);
+        productDTO.setName("Unknown Product");
+        productDTO.setDescription("N/A");
+        productDTO.setPrice(0.0);
+
+        return productDTO;
+    }
+    @CircuitBreaker(name = "customerService", fallbackMethod = "customerFallBack")
+    private CustomerDTO getCustomerWithFallBack(Long id){
+        return customerClient.getCustomerById(id);
+    };
+    public CustomerDTO customerFallBack(Long id, Throwable throwable){
+        CustomerDTO customerDTO = new CustomerDTO();
+        customerDTO.setId(id);
+        customerDTO.setName("Unknown Customer");
+        customerDTO.setEmail("email.com");
+        customerDTO.setPhone("N/A");
+        return customerDTO;
+    }
 
 
     @Override
     public void createOrder(OrderRequestDTO orderRequestDTO) {
 
+        ProductDTO product = productClient.getProductById(orderRequestDTO.getProductId());
+        CustomerDTO customer = customerClient.getCustomerById(orderRequestDTO.getCustomerId());
+
+
         //validateOrderRequest(orderRequestDTO);
-
-
-        Customer  customer = customerRepository.findById(orderRequestDTO.getCustomerId()).orElseThrow(()->new RuntimeException("Customer not found"));
-        Product product= productRepository.findById(orderRequestDTO.getProductId()).orElseThrow(()->new RuntimeException("Product not found"));;
-
-        if(product.getAvailableQuantity() < orderRequestDTO.getQuantity()){
-            throw new RuntimeException("Insufficient product quantity");
-        }
-        // Deduct the ordered quantity from the product's available quantity
-        product.setAvailableQuantity(product.getAvailableQuantity() - orderRequestDTO.getQuantity());
-        productRepository.save(product);
         Order order=   Order.builder().
-                customer(customer).
-                product(product).
+                productId(product.getId()).
+                customerId(customer.getId()).
+                price(product.getPrice()*orderRequestDTO.getQuantity()).
                 quantity(orderRequestDTO.getQuantity()).
-                price(product.getPrice() * orderRequestDTO.getQuantity()).
                 status(OrderStatusEnum.CREATED.name())
                 .build();
         orderRepository.save(order);
@@ -71,8 +94,7 @@ public class OrderServiceImpl implements OrderService {
         // Implement the mapping logic here and return the OrderResponseDTO
 
         return OrderResponseDTO.builder().id(order.getId())
-                .customerId(order.getCustomer().getId())
-                .productId(order.getProduct().getId())
+
                 .quantity(order.getQuantity())
                 .price(order.getPrice())
                 .orderStatus(order.getStatus())
